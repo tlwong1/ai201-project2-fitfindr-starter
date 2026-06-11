@@ -18,7 +18,65 @@ Usage (once implemented):
     print(result["error"])   # None on success
 """
 
+import re
+
 from tools import search_listings, suggest_outfit, create_fit_card
+
+
+# ── query parsing ─────────────────────────────────────────────────────────────
+
+# Multi-character size tokens we can detect even without the word "size".
+# Single letters (S/M/L) are too ambiguous to match on their own, so those are
+# only picked up via an explicit "size X" phrase.
+_SIZE_WORDS = {"xxs", "xs", "xl", "xxl", "xxxl"}
+
+
+def _parse_query(query: str) -> dict:
+    """
+    Extract a description, optional size, and optional max_price from the
+    user's natural-language query using regex/string rules.
+
+    Returns a dict: {"description": str, "size": str|None, "max_price": float|None}
+    """
+    text = query.strip()
+    size = None
+    max_price = None
+    consumed = []  # substrings to strip out of the description
+
+    # --- price: "under $30", "below 40", "less than $25", or a bare "$30" ---
+    price_match = re.search(
+        r"(?:under|below|less than|max|max price|up to)\s*\$?\s*(\d+(?:\.\d+)?)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not price_match:
+        price_match = re.search(r"\$\s*(\d+(?:\.\d+)?)", text)
+    if price_match:
+        max_price = float(price_match.group(1))
+        consumed.append(price_match.group(0))
+
+    # --- size: explicit "size M" / "size 8" phrase wins ---
+    size_match = re.search(r"\bsize\s+([a-zA-Z0-9/]+)", text, flags=re.IGNORECASE)
+    if size_match:
+        size = size_match.group(1).upper()
+        consumed.append(size_match.group(0))
+    else:
+        # Otherwise look for an unambiguous standalone size token (XS, XL, ...).
+        for token in re.findall(r"[a-zA-Z]+", text):
+            if token.lower() in _SIZE_WORDS:
+                size = token.upper()
+                consumed.append(token)
+                break
+
+    # --- description: the query with the size/price phrases removed ---
+    description = text
+    for phrase in consumed:
+        description = description.replace(phrase, " ")
+    # Tidy leftover punctuation/whitespace.
+    description = re.sub(r"[,\.]", " ", description)
+    description = re.sub(r"\s+", " ", description).strip()
+
+    return {"description": description, "size": size, "max_price": max_price}
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -92,15 +150,61 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     Before writing code, complete the Planning Loop and State Management sections
     of planning.md — your implementation should match what you described there.
     """
-    # TODO: implement the planning loop
+    # Step 1: fresh session for this interaction.
     session = _new_session(query, wardrobe)
-    session["error"] = "Planning loop not yet implemented."
+
+    # Step 2: parse the natural-language query into search parameters.
+    session["parsed"] = _parse_query(query)
+    parsed = session["parsed"]
+
+    # Step 3: search the listings catalog.
+    session["search_results"] = search_listings(
+        description=parsed["description"],
+        size=parsed["size"],
+        max_price=parsed["max_price"],
+    )
+
+    # Error branch: no matches → explain and STOP. Do not call the later tools.
+    if not session["search_results"]:
+        bits = []
+        if parsed["size"]:
+            bits.append(f"size {parsed['size']}")
+        if parsed["max_price"] is not None:
+            bits.append(f"under ${parsed['max_price']:.0f}")
+        constraints = (" with " + " and ".join(bits)) if bits else ""
+        session["error"] = (
+            f"No listings matched '{parsed['description']}'{constraints}. "
+            "Try broader keywords, removing the size filter, or raising your max price."
+        )
+        return session
+
+    # Step 4: select the top-ranked result and store it in state.
+    session["selected_item"] = session["search_results"][0]
+
+    # Step 5: suggest an outfit using the selected item + the user's wardrobe.
+    session["outfit_suggestion"] = suggest_outfit(
+        session["selected_item"], session["wardrobe"]
+    )
+
+    # Step 6: turn the outfit into a shareable fit card.
+    session["fit_card"] = create_fit_card(
+        session["outfit_suggestion"], session["selected_item"]
+    )
+
+    # Step 7: return the completed session.
     return session
 
 
 # ── CLI test ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import sys
+
+    # Captions can contain emoji; the Windows console defaults to cp1252 and
+    # would crash on them. Force UTF-8 output for the CLI demo.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     from utils.data_loader import get_example_wardrobe, get_empty_wardrobe
 
     print("=== Happy path: graphic tee ===\n")
