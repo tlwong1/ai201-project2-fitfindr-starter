@@ -193,13 +193,13 @@ FitFindr takes a natural-language request describing a secondhand item, then cal
 **Example user query:** "I'm looking for a vintage graphic tee under $30. I mostly wear baggy jeans and chunky sneakers. What's out there and how would I style it?"
 
 **Step 1 — Parse + Search:**
-The loop parses the query into `description="vintage graphic tee"`, `size=None`, `max_price=30.0` and calls `search_listings("vintage graphic tee", None, 30.0)`. It returns matching tops sorted by relevance (e.g. the *"Y2K Baby Tee — Butterfly Print" — $18, depop, excellent*, which has `style_tags` including `vintage` and `graphic tee`). The loop stores the list in `session["search_results"]` and sets `session["selected_item"]` to the top result. *(If the list were empty, the loop would set `session["error"]` and return here — `suggest_outfit` would not run.)*
+The loop parses the query into `description="vintage graphic tee"`, `size=None`, `max_price=30.0` and calls `search_listings("vintage graphic tee", None, 30.0)`. It returns matching tops sorted by relevance — the top result is *"Graphic Tee — 2003 Tour Bootleg Style" — $24, depop, good*, whose `style_tags` include both `graphic tee` and `vintage` and whose title matches on `graphic`/`tee`. The loop stores the list in `session["search_results"]` and sets `session["selected_item"]` to that top result. *(If the list were empty, the loop would set `session["error"]` and return here — `suggest_outfit` would not run.)*
 
 **Step 2 — Suggest outfit:**
-The loop calls `suggest_outfit(selected_item=<Y2K baby tee>, wardrobe=<example wardrobe>)`. The LLM pairs the tee with named pieces from the wardrobe — e.g. *"Tuck it into your baggy straight-leg dark-wash jeans, throw on the vintage black denim jacket, and finish with the chunky white sneakers for a Y2K street look."* This string is stored in `session["outfit_suggestion"]`.
+The loop calls `suggest_outfit(selected_item=<bootleg graphic tee>, wardrobe=<example wardrobe>)`. The LLM pairs the tee with named pieces from the wardrobe — e.g. *"Tuck it into your baggy straight-leg dark-wash jeans, throw on the vintage black denim jacket, and finish with the chunky white sneakers for a 90s grunge street look."* This string is stored in `session["outfit_suggestion"]`.
 
 **Step 3 — Fit card:**
-The loop calls `create_fit_card(outfit=<that suggestion>, new_item=<Y2K baby tee>)`. The LLM returns a casual caption, e.g. *"found this butterfly baby tee on depop for $18 and it's so me 🦋 styled it with my baggy jeans + chunky sneaks, full fit in my stories."* Stored in `session["fit_card"]`.
+The loop calls `create_fit_card(outfit=<that suggestion>, new_item=<bootleg graphic tee>)`. The LLM returns a casual caption, e.g. *"found this 2003 tour bootleg tee on depop for $24 and it's exactly my vibe 🖤 styled it with my baggy jeans + chunky sneaks, full fit in my stories."* Stored in `session["fit_card"]`.
 
 **Final output to user:**
 `app.py` reads the finished session and populates three panels: the found item (title, price, platform, condition), the outfit suggestion, and the shareable fit card. `session["error"]` is `None`, so no error is shown.
